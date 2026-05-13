@@ -30,6 +30,8 @@ export default function App() {
     audioScrambling: true,
     flipVideo: false,
     filmGrain: true,
+    framerateJitter: true,
+    audioEQ: true,
   });
 
   const ffmpegRef = useRef(new FFmpeg());
@@ -100,6 +102,10 @@ export default function App() {
       args.push('-preset', 'ultrafast');
       args.push('-crf', '26');
 
+      if (settings.framerateJitter) {
+        args.push('-r', '30.01'); // Force output to 30.01 FPS to ruin frame alignment
+      }
+
       if (settings.metadataStrip) {
         args.push('-map_metadata', '-1');
         args.push('-fflags', '+bitexact');
@@ -136,6 +142,11 @@ export default function App() {
       if (settings.audioScrambling) {
         if (afilters) afilters += ",";
         afilters += "asetrate=48000*1.01,aresample=48000";
+      }
+
+      if (settings.audioEQ) {
+        if (afilters) afilters += ",";
+        afilters += "equalizer=f=1000:width_type=h:width=200:g=-1.5,bass=g=1.5,treble=g=1.5";
       }
 
       if (vfilters) {
@@ -347,6 +358,44 @@ export default function App() {
                   <p className="text-xs text-zinc-400 leading-relaxed">عكس الفيديو من اليمين لليسار. فعال جداً ضد التعرف على الوجوه والنصوص والـ Spatial Hashing (قد يعكس النصوص الموجودة بالفيديو).</p>
                 </div>
               </label>
+
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.framerateJitter ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.framerateJitter}
+                    onChange={(e) => setSettings(s => ({...s, framerateJitter: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.framerateJitter ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.framerateJitter && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">ذبذبة معدل الإطارات (Framerate Jitter)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">إجبار الفيديو على معدل إطارات غير قياسي (مثلاً 30.01 FPS) لتدمير التزامن مع الإطارات الأصلية ومنع التطابق الحركي.</p>
+                </div>
+              </label>
+
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.audioEQ ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.audioEQ}
+                    onChange={(e) => setSettings(s => ({...s, audioEQ: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.audioEQ ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.audioEQ && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">إعادة تشكيل الترددات (Audio EQ)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">تضخيم وإضعاف ترددات معينة (Bass/Treble) لإنتاج شكل موجة صوتية هجينة يصعب على خوارزميات تطابق الصوت رصدها.</p>
+                </div>
+              </label>
             </div>
             
             <div className="mt-6 pt-6 border-t border-white/5">
@@ -460,8 +509,12 @@ export default function App() {
                      {[
                        { condition: settings.metadataStrip, text: "تدمير البيانات الوصفية وهيكل الحاوية..." },
                        { condition: settings.visualCamouflage, text: "تطبيق القص والتطوير المجهري للبصمة البصرية..." },
+                       { condition: settings.filmGrain, text: "حقن مجالات عشوائية وميكرو-تشويش..." },
+                       { condition: settings.flipVideo, text: "عكس هيكلة المشهد بصرياً (Flip)..." },
                        { condition: settings.temporalShift, text: "إحداث ذبذبة وإزاحة للشبكة الزمنية للإطارات..." },
-                       { condition: settings.audioScrambling, text: "تغيير هيكلة وتردد الموجة الصوتية..." }
+                       { condition: settings.framerateJitter, text: "كسر التوافق الزمني لمعدل الإطارات (FPS)..." },
+                       { condition: settings.audioScrambling, text: "تغيير العينة وتردد الموجة الصوتية..." },
+                       { condition: settings.audioEQ, text: "إعادة هندسة الموازنة الصوتية وطبقات التردد (EQ)..." }
                      ].map((step, i) => step.condition && (
                         <div key={i} className="flex items-center gap-3 text-xs text-zinc-500 font-mono animate-pulse delay-100">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500/50" />
