@@ -1,0 +1,8 @@
+{
+  "name": "PhantomVideo -محاكي البصمة الرقمية",
+  "description": "تطبيق لتغيير البصمة الرقمية للفيديو وتخطي أنظمة التعرف على المحتوى باستخدام FFmpeg WebAssembly.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
