@@ -17,6 +17,7 @@ export default function App() {
   
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
+  const [videoDuration, setVideoDuration] = useState<number>(0);
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -32,6 +33,9 @@ export default function App() {
     filmGrain: true,
     framerateJitter: true,
     audioEQ: true,
+    trimEdges: true,
+    sceneScrambling: true,
+    vignette: true,
   });
 
   const ffmpegRef = useRef(new FFmpeg());
@@ -81,6 +85,13 @@ export default function App() {
       setVideoPreview(url);
       setProcessedUrl(null);
       setProgress(0);
+
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        setVideoDuration(video.duration);
+      };
+      video.src = url;
     }
   };
 
@@ -95,7 +106,14 @@ export default function App() {
       const ffmpeg = ffmpegRef.current;
       await ffmpeg.writeFile('input.mp4', await fetchFile(videoFile));
 
-      const args: string[] = ['-i', 'input.mp4'];
+      const args: string[] = [];
+      
+      if (settings.trimEdges && videoDuration > 1.0) {
+        args.push('-ss', '0.2');
+        args.push('-to', (videoDuration - 0.2).toFixed(3));
+      }
+      
+      args.push('-i', 'input.mp4');
 
       // Optimize for web assembly processing
       args.push('-c:v', 'libx264');
@@ -123,6 +141,11 @@ export default function App() {
         vfilters += "eq=contrast=1.01:brightness=0.005:saturation=1.02,scale=trunc((iw*1.01)/2)*2:trunc((ih*1.01)/2)*2,crop=trunc(iw/1.01/2)*2:trunc(ih/1.01/2)*2,drawbox=x=0:y=0:w=10:h=10:color=black@0.01:t=fill";
       }
 
+      if (settings.vignette) {
+        if (vfilters) vfilters += ",";
+        vfilters += "vignette=a=PI/8";
+      }
+
       if (settings.flipVideo) {
         if (vfilters) vfilters += ",";
         vfilters += "hflip";
@@ -137,6 +160,11 @@ export default function App() {
         if (vfilters) vfilters += ",";
         vfilters += "setpts=0.995*PTS";
         afilters += "atempo=1.005025";
+      }
+
+      if (settings.sceneScrambling) {
+        if (vfilters) vfilters += ",";
+        vfilters += "setpts='PTS*(1.001+0.002*sin(N/60))'";
       }
 
       if (settings.audioScrambling) {
@@ -321,6 +349,81 @@ export default function App() {
                 </div>
               </label>
 
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.audioEQ ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.audioEQ}
+                    onChange={(e) => setSettings(s => ({...s, audioEQ: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.audioEQ ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.audioEQ && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">إعادة تشكيل الترددات (Audio EQ)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">تضخيم وإضعاف ترددات معينة (Bass/Treble) لإنتاج شكل موجة صوتية هجينة يصعب على خوارزميات تطابق الصوت رصدها.</p>
+                </div>
+              </label>
+
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.trimEdges ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.trimEdges}
+                    onChange={(e) => setSettings(s => ({...s, trimEdges: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.trimEdges ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.trimEdges && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">قص الأطراف المجهري (Trim/Cut)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">قص جزء ضئيل جداً (0.2 ثانية) من بداية ونهاية الفيديو لتغيير الطول الإجمالي للملف بالمللي ثانية، مما يفشل التطابق الزمني الكلي.</p>
+                </div>
+              </label>
+
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.sceneScrambling ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.sceneScrambling}
+                    onChange={(e) => setSettings(s => ({...s, sceneScrambling: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.sceneScrambling ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.sceneScrambling && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">تشتيت نقاط المشهد (Scene Scrambling)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">تغيير سرعة الإطارات بشكل متأرجح ومتموج عبر الفيديو لتدمير القياسات الزمنية بين الانتقالات (Cuts) والمقاطع.</p>
+                </div>
+              </label>
+
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.vignette ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.vignette}
+                    onChange={(e) => setSettings(s => ({...s, vignette: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.vignette ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.vignette && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">التعتيم المحيطي الطفيف (Vignette)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">تدريج ظل أسود خفيف جداً على الأطراف لهندسة وتقسيم إضاءة المشهد الكلية لمنع التطابق اللوني.</p>
+                </div>
+              </label>
               <label className={cn(
                 "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
                 settings.filmGrain ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
@@ -508,9 +611,12 @@ export default function App() {
                    <div className="mt-8 space-y-3">
                      {[
                        { condition: settings.metadataStrip, text: "تدمير البيانات الوصفية وهيكل الحاوية..." },
+                       { condition: settings.trimEdges, text: "تدمير الطول الزمني الدقيق للفيلم..." },
                        { condition: settings.visualCamouflage, text: "تطبيق القص والتطوير المجهري للبصمة البصرية..." },
                        { condition: settings.filmGrain, text: "حقن مجالات عشوائية وميكرو-تشويش..." },
+                       { condition: settings.vignette, text: "تشتيت الإضاءة الهندسية وتخفيف الأطراف..." },
                        { condition: settings.flipVideo, text: "عكس هيكلة المشهد بصرياً (Flip)..." },
+                       { condition: settings.sceneScrambling, text: "تشتيت الفواصل الزمنية بين المشاهد (Scene Scrambling)..." },
                        { condition: settings.temporalShift, text: "إحداث ذبذبة وإزاحة للشبكة الزمنية للإطارات..." },
                        { condition: settings.framerateJitter, text: "كسر التوافق الزمني لمعدل الإطارات (FPS)..." },
                        { condition: settings.audioScrambling, text: "تغيير العينة وتردد الموجة الصوتية..." },
