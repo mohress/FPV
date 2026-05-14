@@ -41,6 +41,9 @@ export default function App() {
     trimEdges: true,
     sceneScrambling: true,
     vignette: true,
+    advancedCropPan: true,
+    colorDrift: true,
+    audioPhaseScrambling: true,
   });
 
   const ffmpegRef = useRef(new FFmpeg());
@@ -206,6 +209,18 @@ export default function App() {
         afilters += "atempo=1.005025";
       }
 
+      if (settings.advancedCropPan) {
+        if (vfilters) vfilters += ",";
+        // Dynamic floating crop: crops 1% and moves the crop box using sine waves over time, making every frame spatially unique
+        vfilters += "crop=trunc(iw*0.99/2)*2:trunc(ih*0.99/2)*2:trunc(((sin(t)+1)*0.005)*iw/2)*2:trunc(((cos(t)+1)*0.005)*ih/2)*2,scale=iw:ih";
+      }
+
+      if (settings.colorDrift) {
+        if (vfilters) vfilters += ",";
+        // Shifts red, green, and blue dynamically over time in an invisible wave, breaking any hue/saturation static fingerprints
+        vfilters += "colorbalance=rs='0.02*sin(t/2)':gs='0.02*cos(t/3)':bs='0.02*sin(t/4)'";
+      }
+
       if (settings.sceneScrambling) {
         if (vfilters) vfilters += ",";
         vfilters += "setpts=PTS*(1.001+0.002*sin(N/60))";
@@ -217,6 +232,12 @@ export default function App() {
           afilters += "asetrate=48000*1.01,aresample=48000";
         }
   
+        if (settings.audioPhaseScrambling) {
+          if (afilters) afilters += ",";
+          // Applies a chorus effect shifting phase continuously over time, completely changing audio waveform matches
+          afilters += "chorus=0.5:0.9:50|60:0.4|0.32:0.25|0.4:2|2.3";
+        }
+        
         if (settings.audioEQ) {
           if (afilters) afilters += ",";
           afilters += "equalizer=f=1000:width_type=h:width=200:g=-1.5,bass=g=1.5,treble=g=1.5";
@@ -536,20 +557,58 @@ export default function App() {
 
               <label className={cn(
                 "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
-                settings.audioEQ ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+                settings.advancedCropPan ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
               )}>
                 <div className="relative flex items-center justify-center mt-0.5">
                   <input type="checkbox" className="sr-only" 
-                    checked={settings.audioEQ}
-                    onChange={(e) => setSettings(s => ({...s, audioEQ: e.target.checked}))}
+                    checked={settings.advancedCropPan}
+                    onChange={(e) => setSettings(s => ({...s, advancedCropPan: e.target.checked}))}
                   />
-                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.audioEQ ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
-                    {settings.audioEQ && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.advancedCropPan ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.advancedCropPan && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
                   </div>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium text-white mb-1">إعادة تشكيل الترددات (Audio EQ)</h4>
-                  <p className="text-xs text-zinc-400 leading-relaxed">تضخيم وإضعاف ترددات معينة (Bass/Treble) لإنتاج شكل موجة صوتية هجينة يصعب على خوارزميات تطابق الصوت رصدها.</p>
+                  <h4 className="text-sm font-medium text-white mb-1">القص العائم الانسيابي (Dynamic Crop)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">اقتطاع مجهري متحرك بنسبة 1٪ يتم التلاعب بمكانه مع الزمن لإحباط التجزئة البصرية.</p>
+                </div>
+              </label>
+
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.colorDrift ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.colorDrift}
+                    onChange={(e) => setSettings(s => ({...s, colorDrift: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.colorDrift ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.colorDrift && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">الانحراف اللوني الزمني (Color Drift)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">تغييرات لونية عائمة غير مرئية بالألوان الأساسية تغير من التركيبة الرقمية.</p>
+                </div>
+              </label>
+
+              <label className={cn(
+                "flex items-start gap-4 p-4 rounded-xl border transition-all cursor-pointer",
+                settings.audioPhaseScrambling ? "bg-cyan-500/5 border-cyan-500/30" : "bg-black/20 border-white/5 hover:border-white/10"
+              )}>
+                <div className="relative flex items-center justify-center mt-0.5">
+                  <input type="checkbox" className="sr-only" 
+                    checked={settings.audioPhaseScrambling}
+                    onChange={(e) => setSettings(s => ({...s, audioPhaseScrambling: e.target.checked}))}
+                  />
+                  <div className={cn("w-5 h-5 rounded flex items-center justify-center border", settings.audioPhaseScrambling ? "bg-cyan-500 border-cyan-500" : "border-zinc-700 bg-zinc-800")}>
+                    {settings.audioPhaseScrambling && <CheckCircle2 className="w-3.5 h-3.5 text-zinc-950" />}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-white mb-1">تشتيت الطور الصوتي (Phase Scrambling)</h4>
+                  <p className="text-xs text-zinc-400 leading-relaxed">إضافة تداخل صوتي لتغيير الطور تماما ولتضليل التعرف الآلي على الأمواج الصوتية.</p>
                 </div>
               </label>
             </div>
@@ -674,9 +733,12 @@ export default function App() {
                        { condition: settings.vignette, text: "تشتيت الإضاءة الهندسية وتخفيف الأطراف..." },
                        { condition: settings.flipVideo, text: "عكس هيكلة المشهد بصرياً (Flip)..." },
                        { condition: settings.sceneScrambling, text: "تشتيت الفواصل الزمنية بين المشاهد (Scene Scrambling)..." },
+                       { condition: settings.advancedCropPan, text: "القص الديناميكي العائم لتدمير التطابق الموضعي (Dynamic Pan)..." },
+                       { condition: settings.colorDrift, text: "حقن انحراف لوني متغير زمنياً (Color Drift)..." },
                        { condition: settings.temporalShift, text: "إحداث ذبذبة وإزاحة للشبكة الزمنية للإطارات..." },
                        { condition: settings.framerateJitter, text: "كسر التوافق الزمني لمعدل الإطارات (FPS)..." },
                        { condition: settings.audioScrambling, text: "تغيير العينة وتردد الموجة الصوتية..." },
+                       { condition: settings.audioPhaseScrambling, text: "تغيير الطور الصوتي وحقن صدى ترددي (Phase Scramble)..." },
                        { condition: settings.audioEQ, text: "إعادة هندسة الموازنة الصوتية وطبقات التردد (EQ)..." }
                      ].map((step, i) => step.condition && (
                         <div key={i} className="flex items-center gap-3 text-xs text-zinc-500 font-mono animate-pulse delay-100">
