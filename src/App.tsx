@@ -71,16 +71,21 @@ export default function App() {
         
         // Use a timeout to detect if loading hangs
         let isActuallyReady = false;
+        let hangState = 'fetching core';
         const loadTimeout = setTimeout(() => {
           if (!isActuallyReady) {
-            setErrorMsg('يبدو أن عملية البدء تستغرق وقتاً طويلاً. يرجى التأكد من أن متصفحك يدعم الميزات المطلوبة أو حاول تحديث الصفحة.');
+            setErrorMsg(`يبدو أن عملية البدء تستغرق وقتاً طويلاً في مرحلة: ${hangState}. يرجى محاولة فتح التطبيق في نافذة جديدة أو التحقق من المتصفح.`);
           }
         }, 15000);
 
-        const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
-        setLoadingMsg('جاري تحميل محرك التشفير...');
-        const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+        setLoadingMsg('جاري تحميل المكتبات الأساسية...');
+        const coreURL = await toBlobURL(coreUrl, 'text/javascript');
         
+        hangState = 'fetching wasm';
+        setLoadingMsg('جاري تحميل محرك التشفير...');
+        const wasmURL = await toBlobURL(wasmUrl, 'application/wasm');
+        
+        hangState = 'loading ffmpeg';
         setLoadingMsg('جاري بدء تشغيل المحرك...');
         await ffmpeg.load({
           coreURL,
