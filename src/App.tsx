@@ -1,10 +1,14 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { fetchFile } from '@ffmpeg/util';
 import { clsx, type ClassValue } from 'clsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { Download, FileVideo, Fingerprint, Info, Activity, Layers, UploadCloud, FileAudio, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
+
+import coreUrl from '@ffmpeg/core?url';
+import wasmUrl from '@ffmpeg/core/wasm?url';
+import workerUrl from '@ffmpeg/ffmpeg/worker?url';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -68,24 +72,15 @@ export default function App() {
         let hangState = 'fetching core';
         const loadTimeout = setTimeout(() => {
           if (!isActuallyReady) {
-            setErrorMsg(`يبدو أن عملية البدء تستغرق وقتاً طويلاً في مرحلة: ${hangState}. قد يكون اتصال الإنترنت بطيئاً. يرجى الانتظار أو إعادة تحميل الصفحة.`);
+            setErrorMsg(`يبدو أن عملية البدء تستغرق وقتاً طويلاً. يرجى الانتظار أو إعادة تحميل الصفحة.`);
           }
         }, 15000);
 
-        const cdnBaseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
-
-        setLoadingMsg('جاري تحميل المكتبات الأساسية (الرجاء الانتظار)...');
-        const coreURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.js`, 'text/javascript');
-        
-        hangState = 'fetching wasm';
-        setLoadingMsg('جاري تحميل محرك التشفير الضخم (~30MB)، قد يستغرق دقيقة...');
-        const wasmURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.wasm`, 'application/wasm');
-        
-        hangState = 'loading ffmpeg';
         setLoadingMsg('جاري بدء تشغيل المحرك...');
         await ffmpeg.load({
-          coreURL,
-          wasmURL,
+          coreURL: coreUrl,
+          wasmURL: wasmUrl,
+          classWorkerURL: workerUrl,
         });
         
         isActuallyReady = true;
