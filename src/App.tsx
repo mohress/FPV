@@ -6,6 +6,9 @@ import { Download, FileVideo, Fingerprint, Info, Activity, Layers, UploadCloud, 
 import React, { useEffect, useRef, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
 
+import coreUrl from '@ffmpeg/core?url';
+import wasmUrl from '@ffmpeg/core/wasm?url';
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -22,6 +25,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processedUrl, setProcessedUrl] = useState<string | null>(null);
+  const [logs, setLogs] = useState<string[]>([]);
 
   // Settings
   const [settings, setSettings] = useState({
@@ -41,13 +45,19 @@ export default function App() {
   const ffmpegRef = useRef(new FFmpeg());
   const messageRef = useRef<HTMLDivElement>(null);
 
+  const isLoadedRef = useRef(false);
+
   useEffect(() => {
     const load = async () => {
+      if (isLoadedRef.current) return;
+      isLoadedRef.current = true;
+
       try {
         const ffmpeg = ffmpegRef.current;
         ffmpeg.on('log', ({ message }) => {
           console.log('[FFmpeg]', message);
-          if (message.includes('Error')) {
+          setLogs(prev => [...prev.slice(-30), message]);
+          if (message.toLowerCase().includes('error')) {
             console.error(message);
           }
         });
@@ -56,17 +66,35 @@ export default function App() {
           setProgress(Math.max(0, Math.min(100, Math.round(progress * 100))));
         });
 
-        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+        setLoadingMsg('جاري تحميل المكتبات الأساسية...');
+        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
         
+        // Use a timeout to detect if loading hangs
+        let isActuallyReady = false;
+        const loadTimeout = setTimeout(() => {
+          if (!isActuallyReady) {
+            setErrorMsg('يبدو أن عملية البدء تستغرق وقتاً طويلاً. يرجى التأكد من أن متصفحك يدعم الميزات المطلوبة أو حاول تحديث الصفحة.');
+          }
+        }, 15000);
+
+        const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+        setLoadingMsg('جاري تحميل محرك التشفير...');
+        const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+        
+        setLoadingMsg('جاري بدء تشغيل المحرك...');
         await ffmpeg.load({
-          coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-          wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+          coreURL,
+          wasmURL,
         });
         
+        isActuallyReady = true;
+        clearTimeout(loadTimeout);
         setLoaded(true);
+        setLoadingMsg('جاهز');
       } catch (err: any) {
         console.error('FFmpeg Load Error:', err);
-        setErrorMsg('فشل تحميل محرك المعالجة. يرجى التحقق من اتصالك بالإنترنت وتحديث الصفحة.');
+        setErrorMsg('فشل محرك المعالجة في البدء. السبب: ' + (err.message || 'خطأ غير معروف') + '. يرجى تحديث الصفحة.');
+        isLoadedRef.current = false;
       }
     };
 
@@ -102,9 +130,29 @@ export default function App() {
       setIsProcessing(true);
       setProgress(0);
       setProcessedUrl(null);
+      setErrorMsg('');
+      setLogs([]);
       
       const ffmpeg = ffmpegRef.current;
       await ffmpeg.writeFile('input.mp4', await fetchFile(videoFile));
+
+      // Fast check if audio exists to prevent stream mapping errors
+      let hasAudio = true;
+      const probeLogs: string[] = [];
+      const probeLogger = ({ message }: { message: string }) => probeLogs.push(message);
+      ffmpeg.on('log', probeLogger);
+      try {
+        await ffmpeg.exec(['-i', 'input.mp4']);
+      } catch (e) {
+        // Expected because no output file
+      }
+      ffmpeg.off('log', probeLogger);
+      hasAudio = probeLogs.some(log => log.includes('Audio:'));
+      console.log('Detected Audio:', hasAudio);
+
+      const localExecLogs: string[] = [];
+      const execLogger = ({ message }: { message: string }) => localExecLogs.push(message);
+      ffmpeg.on('log', execLogger);
 
       const args: string[] = [];
       
@@ -164,17 +212,19 @@ export default function App() {
 
       if (settings.sceneScrambling) {
         if (vfilters) vfilters += ",";
-        vfilters += "setpts='PTS*(1.001+0.002*sin(N/60))'";
+        vfilters += "setpts=PTS*(1.001+0.002*sin(N/60))";
       }
 
-      if (settings.audioScrambling) {
-        if (afilters) afilters += ",";
-        afilters += "asetrate=48000*1.01,aresample=48000";
-      }
-
-      if (settings.audioEQ) {
-        if (afilters) afilters += ",";
-        afilters += "equalizer=f=1000:width_type=h:width=200:g=-1.5,bass=g=1.5,treble=g=1.5";
+      if (hasAudio) {
+        if (settings.audioScrambling) {
+          if (afilters) afilters += ",";
+          afilters += "asetrate=48000*1.01,aresample=48000";
+        }
+  
+        if (settings.audioEQ) {
+          if (afilters) afilters += ",";
+          afilters += "equalizer=f=1000:width_type=h:width=200:g=-1.5,bass=g=1.5,treble=g=1.5";
+        }
       }
 
       if (vfilters) {
@@ -184,11 +234,14 @@ export default function App() {
         maps.push('-map', '0:v');
       }
 
-      if (afilters) {
-        filterGraph.push(`[0:a]${afilters}[aout]`);
-        maps.push('-map', '[aout]');
-      } else {
-        maps.push('-map', '0:a');
+      if (hasAudio) {
+        if (afilters) {
+          filterGraph.push(`[0:a]${afilters}[aout]`);
+          maps.push('-map', '[aout]');
+        } else {
+          // Use optional map just in case probe was inaccurate
+          maps.push('-map', '0:a?');
+        }
       }
 
       if (filterGraph.length > 0) {
@@ -196,15 +249,19 @@ export default function App() {
       }
       
       args.push(...maps);
-      args.push('-c:a', 'aac');
-      args.push('-b:a', '128k');
+      if (hasAudio) {
+        args.push('-c:a', 'aac');
+        args.push('-b:a', '128k');
+      }
       args.push('output.mp4');
 
       console.log('Executing FFmpeg with args:', args.join(' '));
       
       const result = await ffmpeg.exec(args);
+      ffmpeg.off('log', execLogger);
       
       if (result !== 0) {
+        console.error('FFmpeg Execution Failed. End of logs:\n', localExecLogs.slice(-20).join('\n'));
         throw new Error('فشلت عملية التشفير خلال التنفيذ.');
       }
 
@@ -568,14 +625,18 @@ export default function App() {
                    )}
                 </div>
 
-                <div className="p-6 bg-zinc-950/50 border-t border-white/5 flex justify-end">
+                <div className="p-6 bg-zinc-950/50 border-t border-white/5 flex justify-between items-center gap-4">
+                  <div className="text-xs font-mono text-zinc-500">
+                    {!loaded && !errorMsg && loadingMsg}
+                    {errorMsg && <span className="text-red-400 font-sans">{errorMsg}</span>}
+                  </div>
                   <button 
                     onClick={processVideo}
-                    disabled={!loaded}
+                    disabled={!loaded || isProcessing}
                     className="flex items-center gap-2 bg-gradient-to-l from-cyan-600 w-full sm:w-auto justify-center to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white px-8 py-3.5 rounded-xl font-bold shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Activity className="w-5 h-5" />
-                    بدء تشفير وتغيير بصمة الفيديو
+                    {isProcessing ? 'جاري المعالجة...' : 'بدء تشفير وتغيير بصمة الفيديو'}
                   </button>
                 </div>
               </div>
@@ -626,6 +687,14 @@ export default function App() {
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500/50" />
                           {step.text}
                         </div>
+                     ))}
+                   </div>
+
+                   {/* Terminal Simulator for Logs */}
+                   <div className="mt-8 bg-black/60 p-4 rounded-xl border border-white/5 w-full h-32 overflow-y-auto font-mono text-[10px] text-zinc-500 text-left flex flex-col gap-1" dir="ltr">
+                     {logs.length === 0 && <span className="animate-pulse">Waiting for WebAssembly engine to start...</span>}
+                     {logs.map((log, i) => (
+                       <span key={i} className="whitespace-pre-wrap">{log}</span>
                      ))}
                    </div>
                 </div>
