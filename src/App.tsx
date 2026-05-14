@@ -67,7 +67,7 @@ export default function App() {
         });
 
         setLoadingMsg('جاري تحميل المكتبات الأساسية...');
-        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+        const baseURL = '';
         
         // Use a timeout to detect if loading hangs
         let isActuallyReady = false;
